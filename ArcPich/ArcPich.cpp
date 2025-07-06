@@ -235,6 +235,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 #include <windows.h>
 #include <vector>
 #include <cmath>
+#include <chrono>
 
 const wchar_t szClassName[] = L"ArkanoidHBRUSH";
 
@@ -244,16 +245,18 @@ struct Block {
     HBRUSH brush;
     bool destroyed;
 };
-
 // Глобальные переменные
 HBRUSH hBlockBrush; // кисть для блоков
 HBRUSH hPaddleBrush; // кисть для ракетки
 HBRUSH hBallBrush;   // кисть для мяча
-float dx = 2, dy = -4;
+float dx = 3, dy = -45, dy1=dy;
+int TimPer = 500;
 static std::vector<Block> blocks;
 static RECT paddleRect;
 static RECT ballRect;
 static bool isLeftPressed = false, isRightPressed = false;
+std::chrono::steady_clock::time_point prevTime;
+double deltaTime = 0.0; // Время между кадрами в секундах
 
 // Объявление функций
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -297,14 +300,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     }
     return (int)msg.wParam;
 }
-
 // Инициализация игровых объектов
 void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRect) {
     // Создаем кисти
     hBlockBrush = CreateSolidBrush(RGB(200, 50, 50));   // красные блоки
     hPaddleBrush = CreateSolidBrush(RGB(50, 50, 200)); // синяя ракетка
     hBallBrush = CreateSolidBrush(RGB(255, 255, 0));   // желтый мяч
-
     // Создаем блоки
     int blockRows = 5;
     int blockCols = 10;
@@ -327,14 +328,10 @@ void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRec
     // Создаем ракетку
     paddleRect.left = 350; paddleRect.top = 550; paddleRect.right = 450; paddleRect.bottom = 570;
     
-
     // Создаем мяч
     ballRect.left = 390; ballRect.top = 530; ballRect.right = 410; ballRect.bottom = 550;
     
-
 }
-
-int ballsize = ballRect.right - ballRect.left;
 //непосредтсвенно отрисовка
 static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
 {
@@ -351,12 +348,10 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
         rc.bottom - rc.top);
     hbmOld = (HBITMAP)SelectObject(hdcMem, hbmMem);//тут с преобразованием типов данных прикол
     
-
     //чистим фон
     hbrBkGnd = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
     FillRect(hdcMem, &rc, hbrBkGnd);
     DeleteObject(hbrBkGnd);
-
 
     // Отрисовка ракетки
     {
@@ -367,13 +362,15 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
         HBRUSH hOldBrush = (HBRUSH)SelectObject(hdcMem, hPaddleBrush);
         Rectangle(hdcMem, paddleRect.left, paddleRect.top, paddleRect.right, paddleRect.bottom);
         SelectObject(hdcMem, hOldBrush);
+        
     }
-
     // Отрисовка мяча
     {
+       
         HBRUSH hOldBrush = (HBRUSH)SelectObject(hdcMem, hBallBrush);
         Ellipse(hdcMem, ballRect.left, ballRect.top, ballRect.right, ballRect.bottom);
         SelectObject(hdcMem, hOldBrush);
+        
     }
     
     // Отрисовка блоков
@@ -461,13 +458,11 @@ bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, doub
     }
     return false;
 }
-
 //основная функция
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     PAINTSTRUCT ps;
     
-    int TimPer = 200;
     switch (msg)
     {
     case WM_CREATE:
@@ -478,94 +473,120 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         auto window_width = r.right - r.left;//определяем размеры и сохраняем
         auto window_height = r.bottom - r.top;
         InitGameObjects(blocks, paddleRect, ballRect);
-        SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры (~60 fps)
+        prevTime = std::chrono::steady_clock::now();
+        SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры
 
         break;
     }
 
     case WM_TIMER:
     {
-        // Обновление положения мяча и проверка столкновения
-        // Время шага
-        const double deltaTime = 1/(1000/TimPer);
+        auto currentTime = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = currentTime - prevTime;
+        deltaTime = elapsed.count(); // В секундах
+        prevTime = currentTime;
+        int ballsize = ballRect.right - ballRect.left;
+        //const double deltaTime = 1.0 / (1000.0 / TimPer);
 
         // Начальные позиции центра мяча
-        POINT startPos = { ballRect.left + (ballsize) / 2 , ballRect.top + (ballsize) / 2 };
+        POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
+        POINT endPos = { startPos.x + dx * deltaTime, startPos.y + dy * deltaTime};
+        // Предполагаемое новое положение
+        endPos.x = startPos.x + dx;
+        endPos.y = startPos.y + dy;
 
-        // Конечные позиции за один шаг
-        POINT endPos = { startPos.x + dx * deltaTime * 1000 , startPos.y + dy * deltaTime * 1000 };
-
-            // dx/dy как пиксели за кадр
-            endPos.x = startPos.x + dx;
-            endPos.y = startPos.y + dy;
+        // Буферные переменные для новых координат
+        int newX = endPos.x;
+        int newY = endPos.y;
 
         bool collisionDetected = false;
         double collisionT;
 
         // Проверка столкновений с блоками
-        for (auto it = blocks.begin(); it != blocks.end(); )
+        for (auto& block : blocks)
         {
-            RECT blockRect = it->rect;
-            if (LineIntersectsRect(startPos, endPos, blockRect, collisionT))
+            if (!block.destroyed)
             {
-                // Обновляем позицию до точки столкновения
-                int newX = static_cast<int>(startPos.x + dx * collisionT);
-                int newY = static_cast<int>(startPos.y + dy * collisionT);
+                RECT blockRect = block.rect;
+                if (LineIntersectsRect({ startPos.x, startPos.y }, { endPos.x, endPos.y }, blockRect, collisionT))
+                {
+                    // Обновляем позицию до точки столкновения
+                    newX = static_cast<int>(startPos.x + dx * collisionT);
+                    newY = static_cast<int>(startPos.y + dy * collisionT);
+                    SetRect(&ballRect,
+                        newX - ballsize / 2,
+                        newY - ballsize / 2,
+                        newX + ballsize / 2,
+                        newY + ballsize / 2);
+                    InvalidateRect(hwnd, NULL, TRUE); // перерисовать окно
 
-                // Обновляем позицию мяча
-                ballRect.left = newX - (ballsize) / 2;
-                ballRect.top = newY - (ballsize) / 2;
+                    // Отражение скорости надо в зависимость о стороны сделать
+                    dx = dx;
+                    dy = -dy;
 
-                // Меняем направление по оси X или Y в зависимости от стороны столкновения
-                // Для простоты предположим отражение по обеим осям:
-                dx = -dx;
-                dy = -dy;
+                    // Удаляем блок или помечаем как уничтоженный
+                    block.destroyed = true;
 
-                // Удаляем блок
-                it = blocks.erase(it);
-
-                collisionDetected = true;
-                //break; // Можно продолжить проверку после обработки первого столкновения
+                    collisionDetected = true;
+                    break; // Можно продолжить или прервать по необходимости
+                }
             }
-            else
-                ++it;
         }
 
         if (!collisionDetected)
         {
-            // Проверка столкновений со стенами окна
+            // Проверка столкновения с ракеткой
+
+            if (ballRect.bottom >= paddleRect.top)
+            {
+                dy = -abs(dy);
+            }
+            // Проверка границ окна
             RECT clientRect;
             GetClientRect(hwnd, &clientRect);
 
-            if (endPos.x <= clientRect.left + (ballsize) / 2 || endPos.x >= clientRect.right - (ballsize) / 2)
+            if (newX <= clientRect.left + ballsize / 2 || newX >= clientRect.right - ballsize / 2)
                 dx = -dx;
 
-            if (endPos.y <= clientRect.top + (ballsize) / 2)
+            if (newY <= clientRect.top + ballsize / 2)
                 dy = -dy;
 
-            if (endPos.y >= clientRect.bottom - (ballsize) / 2)
+            if (newY >= clientRect.bottom - ballsize / 2)
             {
                 // Мяч упал вниз — сбросить позицию или обработать проигрыш
                 SetRect(&ballRect, 390, 530, 410, 550);
-                dy = -4;
+                dy = dy1;
                 break;
             }
 
-            // Обновляем позицию мяча после всех проверок
-            startPos.x += dx;
-            startPos.y += dy;
-
-            ballRect.left = static_cast<int>(startPos.x) - (ballsize) / 2;
-            ballRect.top = static_cast<int>(startPos.y) - (ballsize) / 2;
-
         }
 
-        // Обновляем позицию мяча в структуре
-        OffsetRect(&ballRect, dx, dy);
+        // Обновляем позицию мяча только после всех проверок
+        SetRect(&ballRect,
+            newX - ballsize / 2,
+            newY - ballsize / 2,
+            newX + ballsize / 2,
+            newY + ballsize / 2);
 
-        InvalidateRect(hwnd, NULL, FALSE);
+        // Обработка управления ракеткой и перерисовка...
+        if (isLeftPressed) {
+            OffsetRect(&paddleRect, -5, 0);
+            // Проверка границ
+            if (paddleRect.left < 0)
+                SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
+        }
+
+        if (isRightPressed) {
+            OffsetRect(&paddleRect, 5, 0);
+            // Проверка границ
+            if (paddleRect.right > 800)
+                SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
+        }
+
+        InvalidateRect(hwnd, NULL, TRUE); // перерисовать окно
+
         break;
-    }
+    }//старая проверка
         /* Проверка столкновения с границами окна
             if (ballRect.left <= 0 || ballRect.right >= 800)
             {
@@ -638,6 +659,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 break;
             }
         }
+
         // Обновление позиции мяча
         OffsetRect(&ballRect, dx, dy);
 
@@ -661,9 +683,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         
     } */
 
-    
-    
-
     case WM_KEYDOWN:
     {
         if (wParam == VK_LEFT) isLeftPressed = true;
@@ -676,7 +695,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam == VK_RIGHT) isRightPressed = false;
         break;
     
-
     case WM_MOUSEMOVE:
     {
         POINT pt = { (short)LOWORD(lParam),(short)HIWORD(lParam) };
@@ -686,15 +704,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         break;
     }
-    ;
-
+  
     case WM_ERASEBKGND:
         return (LRESULT)1; // Say we handled it.
 
     case WM_PAINT:
     {
 
-        //HDC hdc = BeginPaint(hwnd, &ps);
         BeginPaint(hwnd, &ps);
         Paint(hwnd, &ps);
         EndPaint(hwnd, &ps);
@@ -722,249 +738,3 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return NULL;
 }
 #endif // vv2
-//#define vv3
-#ifdef vv3
-#include <windows.h>
-#include <vector>
-#include <algorithm>
-#include <cmath>
-
-const int WINDOW_WIDTH = 800;
-const int WINDOW_HEIGHT = 600;
-
-const int BALL_SIZE = 20;
-double dx = 5.0; // скорость по X
-double dy = -3.0; // скорость по Y
-
-RECT ballRect;
-std::vector<RECT> blocks;
-
-HWND hwndMain;
-UINT_PTR timerId;
-
-// Функция для установки позиции мяча по центру
-void SetBallPositionFromCenter(const POINT& center)
-{
-    ballRect.left = static_cast<int>(center.x) - BALL_SIZE / 2;
-    ballRect.top = static_cast<int>(center.y) - BALL_SIZE / 2;
-    ballRect.right = static_cast<int>(center.x) + BALL_SIZE / 2;
-    ballRect.bottom = static_cast<int>(center.y) + BALL_SIZE / 2;
-}
-
-// Проверка пересечения линии сегмента p1-p2 с прямоугольником rect
-bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, double& t)
-{
-    auto LineSegmentsIntersect = [](double x1, double y1, double x2, double y2,
-        double x3, double y3, double x4, double y4,
-        double& t)
-        {
-            double denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-            if (fabs(denom) < 1e-8)
-                return false; // параллельны
-
-            double t_num = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
-            t = t_num / denom;
-
-            double u_num = (x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2);
-            double u = u_num / denom;
-
-            if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
-                return true;
-            return false;
-        };
-
-    POINT sides[4][2] = {
-        { {rect.left, rect.top}, {rect.right, rect.top} },
-        { {rect.right, rect.top}, {rect.right, rect.bottom} },
-        { {rect.right, rect.bottom}, {rect.left, rect.bottom} },
-        { {rect.left, rect.bottom}, {rect.left, rect.top} }
-    };
-
-    bool hit = false;
-    double minT = 1.0;
-
-    for (int i = 0; i < 4; ++i)
-    {
-        double tTemp;
-        if (LineSegmentsIntersect(p1.x, p1.y, p2.x, p2.y,
-            sides[i][0].x, sides[i][0].y, sides[i][1].x, sides[i][1].y,
-            tTemp))
-        {
-            if (tTemp < minT)
-            {
-                minT = tTemp;
-                hit = true;
-            }
-        }
-    }
-
-    if (hit)
-    {
-        t = minT;
-        return true;
-    }
-    return false;
-}
-
-// Обработка столкновений с границами окна
-void CheckWallCollisions(POINT& pos)
-{
-    RECT clientRect;
-    GetClientRect(hwndMain, &clientRect);
-
-    if (pos.x <= clientRect.left + BALL_SIZE / 2)
-    {
-        pos.x = clientRect.left + BALL_SIZE / 2;
-        dx = -dx;
-    }
-    if (pos.x >= clientRect.right - BALL_SIZE / 2)
-    {
-        pos.x = clientRect.right - BALL_SIZE / 2;
-        dx = -dx;
-    }
-    if (pos.y <= clientRect.top + BALL_SIZE / 2)
-    {
-        pos.y = clientRect.top + BALL_SIZE / 2;
-        dy = -dy;
-    }
-}
-
-// Обработка столкновений с блоками
-void CheckBlockCollisions(const POINT& startPos, POINT& endPos)
-{
-    for (auto it = blocks.begin(); it != blocks.end(); )
-    {
-        RECT blockRect = *it;
-
-        double t = 0.0;
-        if (LineIntersectsRect(startPos, endPos, blockRect, t))
-        {
-            // Обновляем позицию до точки столкновения
-            endPos.x = startPos.x + dx * t;
-            endPos.y = startPos.y + dy * t;
-
-            // Отражение скорости по обеим осям
-            dx = -dx;
-            dy = -dy;
-
-            // Удаляем блок
-            it = blocks.erase(it);
-            break; // Можно продолжить проверку после первого столкновения
-        }
-        else
-            ++it;
-    }
-}
-
-// Обработчик таймера — движение мяча
-void OnTimer()
-{
-    // Текущая позиция центра мяча
-    POINT startPos = { ballRect.left + BALL_SIZE / 2 , ballRect.top + BALL_SIZE / 2 };
-
-    // Предполагаемое новое положение за один кадр
-    POINT endPos = { startPos.x + dx , startPos.y + dy };
-
-    // Проверка столкновений с блоками
-    CheckBlockCollisions(startPos, endPos);
-
-    // Проверка столкновений со стенами
-    CheckWallCollisions(endPos);
-
-    // Обновляем позицию мяча по центру
-    SetBallPositionFromCenter(endPos);
-
-}
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_CREATE:
-    {
-        hwndMain = hwnd;
-
-        // Инициализация мяча в центре окна
-        POINT center = { WINDOW_WIDTH / 2 , WINDOW_HEIGHT / 2 };
-        SetBallPositionFromCenter(center);
-
-        // Создаем блоки — например, несколько прямоугольников в нижней части окна
-        int blockWidth = 60, blockHeight = 20;
-        for (int i = 0; i < 10; ++i)
-        {
-            RECT r = { 10 + i * 70 , WINDOW_HEIGHT - 50 ,10 + i * 70 + blockWidth , WINDOW_HEIGHT - 50 + blockHeight };
-            blocks.push_back(r);
-        }
-
-        timerId = SetTimer(hwnd, NULL, 16, NULL); // примерно 60 fps
-    }
-    break;
-
-    case WM_TIMER:
-        OnTimer();
-        InvalidateRect(hwnd, NULL, FALSE);
-        break;
-
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        // Рисуем мяч
-        HBRUSH brushBall = CreateSolidBrush(RGB(255, 0, 0));
-        FillRect(hdc, &ballRect, brushBall);
-        DeleteObject(brushBall);
-
-        // Рисуем блоки
-        HBRUSH brushBlock = CreateSolidBrush(RGB(0, 255, 0));
-        for (const auto& r : blocks)
-            FillRect(hdc, &r, brushBlock);
-        DeleteObject(brushBlock);
-
-        EndPaint(hwnd, &ps);
-    }
-    break;
-
-    case WM_DESTROY:
-        if (timerId != 0)
-            KillTimer(hwnd, timerId);
-        PostQuitMessage(0);
-        break;
-
-    default:
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-    return 0;
-}
-
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-    LPSTR lpCmdLine, int nCmdShow)
-{
-    WNDCLASSEX wc = {};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = (LPCWSTR)"MyWindowClass";
-
-    RegisterClassEx(&wc);
-
-    HWND hwnd = CreateWindow(wc.lpszClassName, L"Мяч и блоки", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        WINDOW_WIDTH, WINDOW_HEIGHT,
-        NULL, NULL, hInstance, NULL);
-
-    ShowWindow(hwnd, nCmdShow);
-    UpdateWindow(hwnd);
-
-    MSG msg = {};
-    while (GetMessage(&msg, NULL, NULL, NULL))
-    {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-
-    return 0;
-}
-#endif //vv3
