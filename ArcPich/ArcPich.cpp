@@ -235,7 +235,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 #include <windows.h>
 #include <vector>
 #include <cmath>
-//#include <chrono>
+#include <chrono>
 
 const wchar_t szClassName[] = L"ArkanoidHBRUSH";
 
@@ -249,17 +249,19 @@ struct Block {
 HBRUSH hBlockBrush; // кисть для блоков
 HBRUSH hPaddleBrush; // кисть для ракетки
 HBRUSH hBallBrush;   // кисть для мяча
-float dx = 3, dy = -6, dy1=dy;
-int TimPer = 16;
-const int steps = 20; // число подшагов, увеличьте для большей точности
+float dx = 3, dy = -50, dy1=dy; //dy1 = скорость после сброса
+int TimPer = 200;
+const int steps = 300; // число подшагов, увеличить для большей точности
 double stepDx = dx / steps;
 double stepDy = dy / steps;
+int newX;
+int newY;
 static std::vector<Block> blocks;
 static RECT paddleRect;
 static RECT ballRect;
 static bool isLeftPressed = false, isRightPressed = false;
-//std::chrono::steady_clock::time_point prevTime;
-//double deltaTime = 0.0; // Время между кадрами в секундах
+std::chrono::steady_clock::time_point prevTime;
+double deltaTime = 0.0; // Время между кадрами в секундах
 
 // Объявление функций
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -430,10 +432,10 @@ bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, doub
 
     // Определяем стороны прямоугольника
     POINT sides[4][2] = {
-        { {rect.left, rect.top}, {rect.right, rect.top} },
-        { {rect.right, rect.top}, {rect.right, rect.bottom} },
-        { {rect.right, rect.bottom}, {rect.left, rect.bottom} },
-        { {rect.left, rect.bottom}, {rect.left, rect.top} }
+        { {rect.left, rect.top}, {rect.right, rect.top} },//top
+        { {rect.right, rect.top}, {rect.right, rect.bottom} },//right
+        { {rect.right, rect.bottom}, {rect.left, rect.bottom} },//bottom
+        { {rect.left, rect.bottom}, {rect.left, rect.top} }//left
     };
 
     bool hit = false;
@@ -446,7 +448,7 @@ bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, doub
             sides[i][0].x, sides[i][0].y, sides[i][1].x, sides[i][1].y,
             tTemp))
         {
-            if (tTemp < minT)
+            if (tTemp <= minT)
             {
                 minT = tTemp;
                 hit = true;
@@ -476,7 +478,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         //auto window_width = r.right - r.left;//определяем размеры и сохраняем
         //auto window_height = r.bottom - r.top;
         InitGameObjects(blocks, paddleRect, ballRect);
-        //prevTime = std::chrono::steady_clock::now();
+        prevTime = std::chrono::steady_clock::now();
         SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры
 
         break;
@@ -484,24 +486,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
     {
-        //auto currentTime = std::chrono::steady_clock::now();
-        //std::chrono::duration<double> elapsed = currentTime - prevTime;
-        //deltaTime = elapsed.count(); // В секундах
-        //prevTime = currentTime;
         int ballsize = ballRect.right - ballRect.left;
-        //const double deltaTime = 1.0 / (1000.0 / TimPer);
-
-        // Начальные позиции центра мяча
+        // Начальные и конечные позиции центра мяча
         POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
-        POINT endPos;/* = { startPos.x + dx * deltaTime, startPos.y + dy * deltaTime };*/
-        // Предполагаемое новое положение
-        endPos.x = startPos.x + dx;
-        endPos.y = startPos.y + dy;
-
-        // Буферные переменные для новых координат
-        int newX = endPos.x;
-        int newY = endPos.y;
-
+        POINT endPos = { startPos.x + dx, startPos.y + dy};
         POINT currentPos = startPos;
         bool collisionDetected = false;
         double collisionT = 1.0; // по умолчанию — полного пути
@@ -523,22 +511,33 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         // Обновляем позицию до точки столкновения
                         int collideX = static_cast<int>(currentPos.x + stepDx * tTemp);
                         int collideY = static_cast<int>(currentPos.y + stepDy * tTemp);
-                        // Обновляем позицию мяча
-                        /*int ballsize = ballRect.right - ballRect.left;
-                        SetRect(&ballRect,
-                            collideX - ballsize / 2,
-                            collideY - ballsize / 2,
-                            collideX + ballsize / 2,
-                            collideY + ballsize / 2);*/
-
-                        // Меняем направление скорости в зависимости от стороны столкновения
-                        dy = -dy; // или dx = -dx; в зависимости от стороны
+                       
+                        // Определяем сторону столкновения
+                        if (collideX < blockRect.right || collideX > blockRect.left) 
+                        {
+                            // Столкновение с боковой стороной
+                            dy = -dy; // Отразить по X
+                        }
+                        else 
+                        {
+                            // Столкновение с верхней или нижней стороной
+                            dx = -dx; // Отразить по Y
+                        }
 
                         // Удаляем блок или помечаем как уничтоженный
                         block.destroyed = true;
 
+                        // Обновляем позицию мяча
+                       /*int ballsize = ballRect.right - ballRect.left;
+                       SetRect(&ballRect,
+                           collideX - ballsize / 2,
+                           collideY - ballsize / 2,
+                           collideX + ballsize / 2,
+                           collideY + ballsize / 2);
+
+                        InvalidateRect(hwnd, NULL, TRUE);*/
                         collisionDetected = true;
-                        break; // Можно продолжить или прервать по необходимости
+                        //break; // Можно продолжить или прервать по необходимости
                     }
                 }
             }
@@ -550,8 +549,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
                 int ballsize = ballRect.right - ballRect.left;
                 // Обновляем позицию мяча на основе полного перемещения
-                int newX = startPos.x + static_cast<int>(dx);
-                int newY = startPos.y + static_cast<int>(dy);
+                    newX = startPos.x + static_cast<int>(dx);
+                    newY = startPos.y + static_cast<int>(dy);
 
                 // Проверка ракетки (если мяч касается или ниже верхней части ракетки)
                 if (newY + ballsize / 2 >= paddleRect.top &&
@@ -579,14 +578,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     break;
                 }
 
+                // Обновляем позицию мяча только после всех проверок
+                SetRect(&ballRect,
+                    newX - ballsize / 2,
+                    newY - ballsize / 2,
+                    newX + ballsize / 2,
+                    newY + ballsize / 2);
             }
 
-            // Обновляем позицию мяча только после всех проверок
-            SetRect(&ballRect,
-                newX - ballsize / 2,
-                newY - ballsize / 2,
-                newX + ballsize / 2,
-                newY + ballsize / 2);
+            
 
             // Обработка управления ракеткой и перерисовка...
             if (isLeftPressed) 
