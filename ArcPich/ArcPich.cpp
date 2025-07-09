@@ -235,7 +235,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 #include <windows.h>
 #include <vector>
 #include <cmath>
-#include <chrono>
+#include <random>
 
 const wchar_t szClassName[] = L"ArkanoidHBRUSH";
 
@@ -249,19 +249,24 @@ struct Block {
 HBRUSH hBlockBrush; // кисть для блоков
 HBRUSH hPaddleBrush; // кисть для ракетки
 HBRUSH hBallBrush;   // кисть для мяча
-float dx = 3, dy = -50, dy1=dy; //dy1 = скорость после сброса
-int TimPer = 200;
-const int steps = 300; // число подшагов, увеличить для большей точности
-double stepDx = dx / steps;
-double stepDy = dy / steps;
+float dy = (rand() % 10+5);//формируем вектор полета шарика
+float dx = -(1 - dy);//формируем вектор полета шарика
+int /*dx=0, dy=-5,*/ dy1=-3; //dy1 = скорость после сброса
+int TimPer = 16;
+int ballspeed=30/(1000/TimPer);
+const int steps = sqrt(dy*dy+dx*dx); // число подшагов, поставить равным количеству пикслелей между нач и кон точкой движения шарика за 1 кадр 
+//алгоритм брезенхема для проверки коллизии
+double stepDx = dx / steps; 
+double stepDy = dy / steps; 
 int newX;
 int newY;
+int side=0;
+int ballsize = 20;
 static std::vector<Block> blocks;
 static RECT paddleRect;
 static RECT ballRect;
 static bool isLeftPressed = false, isRightPressed = false;
-std::chrono::steady_clock::time_point prevTime;
-double deltaTime = 0.0; // Время между кадрами в секундах
+POINT currentPos1;
 
 // Объявление функций
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -339,12 +344,11 @@ void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRec
 }
 //непосредтсвенно отрисовка
 static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
-{
+{ 
     RECT rc;
     HDC hdcMem;
     HBITMAP hbmMem, hbmOld;
     HBRUSH hbrBkGnd;
-    HFONT hfntOld, hfnt;
 
     GetClientRect(hwnd, &rc);
     hdcMem = CreateCompatibleDC(lpPS->hdc);
@@ -357,6 +361,7 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
     hbrBkGnd = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
     FillRect(hdcMem, &rc, hbrBkGnd);
     DeleteObject(hbrBkGnd);
+
 
     // Отрисовка ракетки
     {
@@ -375,6 +380,8 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
         HBRUSH hOldBrush = (HBRUSH)SelectObject(hdcMem, hBallBrush);
         Ellipse(hdcMem, ballRect.left, ballRect.top, ballRect.right, ballRect.bottom);
         SelectObject(hdcMem, hOldBrush);
+        //SetPixel(hdcMem, currentPos1.x, currentPos1.y, RGB(0, 250, 0)); //надо как-то трасировку отобразить 
+        
         
     }
     
@@ -448,10 +455,12 @@ bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, doub
             sides[i][0].x, sides[i][0].y, sides[i][1].x, sides[i][1].y,
             tTemp))
         {
-            if (tTemp <= minT)
+            if (tTemp < minT)
             {
                 minT = tTemp;
                 hit = true;
+                side = i;
+                break;
             }
         }
     }
@@ -478,7 +487,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         //auto window_width = r.right - r.left;//определяем размеры и сохраняем
         //auto window_height = r.bottom - r.top;
         InitGameObjects(blocks, paddleRect, ballRect);
-        prevTime = std::chrono::steady_clock::now();
         SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры
 
         break;
@@ -486,7 +494,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
     {
-        int ballsize = ballRect.right - ballRect.left;
         // Начальные и конечные позиции центра мяча
         POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
         POINT endPos = { startPos.x + dx, startPos.y + dy};
@@ -496,8 +503,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         for (int i = 0; i < steps; ++i)
         {
+            
             POINT nextPos = { static_cast<int>(currentPos.x + stepDx), static_cast<int>(currentPos.y + stepDy) };
-
+            currentPos1 = nextPos;
 
             // Проверка столкновений с блоками
             for (auto& block : blocks)
@@ -509,35 +517,32 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     if (LineIntersectsRect({ currentPos.x, currentPos.y }, { nextPos.x, nextPos.y }, blockRect, tTemp))
                     {
                         // Обновляем позицию до точки столкновения
-                        int collideX = static_cast<int>(currentPos.x + stepDx * tTemp);
-                        int collideY = static_cast<int>(currentPos.y + stepDy * tTemp);
+                        int collideX = static_cast<int>(currentPos.x + stepDx);// тут было * tTemp
+                        int collideY = static_cast<int>(currentPos.y + stepDy);
                        
+                        // Обновляем позицию мяча
+                        //int ballsize = ballRect.right - ballRect.left;
+                        SetRect(&ballRect,
+                            collideX - ballsize / 2,
+                            collideY - ballsize / 2,
+                            collideX + ballsize / 2,
+                            collideY + ballsize / 2);
                         // Определяем сторону столкновения
-                        if (collideX < blockRect.right || collideX > blockRect.left) 
+                        if /*(side == 0 || side == 2)*/ (blockRect.left < collideY < blockRect.right && (blockRect.left < (collideY-stepDy) < blockRect.right))
                         {
                             // Столкновение с боковой стороной
-                            dy = -dy; // Отразить по X
+                            dy = -abs(dy+ballspeed); // Отразить по X
                         }
-                        else 
+                        if /*(side == 1 || side == 3)*/ (blockRect.top < collideX < blockRect.bottom)
                         {
                             // Столкновение с верхней или нижней стороной
-                            dx = -dx; // Отразить по Y
+                            dx = -abs(dx + ballspeed); // Отразить по Y
                         }
-
+                        
                         // Удаляем блок или помечаем как уничтоженный
                         block.destroyed = true;
-
-                        // Обновляем позицию мяча
-                       /*int ballsize = ballRect.right - ballRect.left;
-                       SetRect(&ballRect,
-                           collideX - ballsize / 2,
-                           collideY - ballsize / 2,
-                           collideX + ballsize / 2,
-                           collideY + ballsize / 2);
-
-                        InvalidateRect(hwnd, NULL, TRUE);*/
                         collisionDetected = true;
-                        //break; // Можно продолжить или прервать по необходимости
+                        break; // Можно продолжить или прервать по необходимости
                     }
                 }
             }
@@ -547,7 +552,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
             if (!collisionDetected)
             {
-                int ballsize = ballRect.right - ballRect.left;
+                //int ballsize = ballRect.right - ballRect.left;
                 // Обновляем позицию мяча на основе полного перемещения
                     newX = startPos.x + static_cast<int>(dx);
                     newY = startPos.y + static_cast<int>(dy);
@@ -556,7 +561,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 if (newY + ballsize / 2 >= paddleRect.top &&
                     newX >= paddleRect.left && newX <= paddleRect.right)
                 {
-                    dy = -abs(dy); // отскок вверх
+                    dy = -abs(dy+ballspeed); // отскок вверх
                     newY = paddleRect.top - ballsize / 2; // корректируем позицию
                 }
 
@@ -565,10 +570,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 GetClientRect(hwnd, &clientRect);
 
                 if (newX - ballsize / 2 <= clientRect.left || newX + ballsize / 2 >= clientRect.right)
-                    dx = -dx;
+                    dx = -abs(dx+ballspeed);
 
                 if (newY - ballsize / 2 <= clientRect.top)
-                    dy = -dy;
+                    dy = -abs(dy+ballspeed);
 
                 if (newY + ballsize / 2 >= clientRect.bottom)
                 {
@@ -733,6 +738,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_ERASEBKGND:
         return (LRESULT)1; // Say we handled it.
+
 
     case WM_PAINT:
     {
