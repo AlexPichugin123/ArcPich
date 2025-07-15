@@ -236,6 +236,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 #include <vector>
 #include <cmath>
 #include <random>
+#include "Parametrs.h"
 
 const wchar_t szClassName[] = L"ArkanoidHBRUSH";
 
@@ -249,19 +250,19 @@ struct Block {
 HBRUSH hBlockBrush; // кисть для блоков
 HBRUSH hPaddleBrush; // кисть для ракетки
 HBRUSH hBallBrush;   // кисть для мяча
-float dy = (rand() % 10+5);//формируем вектор полета шарика
-float dx = -(1 - dy);//формируем вектор полета шарика
-int /*dx=0, dy=-5,*/ dy1=-3; //dy1 = скорость после сброса
-int TimPer = 16;
-int ballspeed=30/(1000/TimPer);
-const int steps = sqrt(dy*dy+dx*dx); // число подшагов, поставить равным количеству пикслелей между нач и кон точкой движения шарика за 1 кадр 
-//алгоритм брезенхема для проверки коллизии
-double stepDx = dx / steps; 
-double stepDy = dy / steps; 
-int newX;
-int newY;
-int side=0;
-int ballsize = 20;
+//float dy = -45; //(rand() % 10 + 5);//формируем вектор полета шарика
+//float dx = 2;//-(1 - dy);//формируем вектор полета шарика
+//int /*dx=0, dy=-5,*/ dy1=-3; //dy1 = скорость после сброса
+//int TimPer = 500;
+//int ballspeed=0;
+//const int steps = sqrt(dy*dy+dx*dx); // число подшагов, поставить равным количеству пикслелей между нач и кон точкой движения шарика за 1 кадр 
+////алгоритм брезенхема для проверки коллизии
+//double stepDx = dx / steps; 
+//double stepDy = dy / steps; 
+//int newX;
+//int newY;
+//int side=0;
+//int ballsize = 20;
 static std::vector<Block> blocks;
 static RECT paddleRect;
 static RECT ballRect;
@@ -492,76 +493,78 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         break;
     }
 
-    case WM_TIMER:
-    {
-        // Начальные и конечные позиции центра мяча
-        POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
-        POINT endPos = { startPos.x + dx, startPos.y + dy};
-        POINT currentPos = startPos;
-        bool collisionDetected = false;
-        double collisionT = 1.0; // по умолчанию — полного пути
-
-        for (int i = 0; i < steps; ++i)
+        case WM_TIMER:
         {
-            
-            POINT nextPos = { static_cast<int>(currentPos.x + stepDx), static_cast<int>(currentPos.y + stepDy) };
-            currentPos1 = nextPos;
+            // Начальные и конечные позиции центра мяча
+            POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
+            POINT endPos = { startPos.x + dx, startPos.y + dy };
+            POINT currentPos = startPos;
+            bool collisionDetected = false;
+            double collisionT = 1.0; // по умолчанию — полного пути
 
-            // Проверка столкновений с блоками
-            for (auto& block : blocks)
+            for (int i = 0; i < steps; ++i)
             {
-                if (!block.destroyed)
+
+                POINT nextPos = { static_cast<int>(currentPos.x + stepDx), static_cast<int>(currentPos.y + stepDy) };
+                //currentPos1 = nextPos;
+
+                // Проверка столкновений с блоками
+                for (auto& block : blocks)
                 {
-                    RECT blockRect = block.rect;
-                    double tTemp;
-                    if (LineIntersectsRect({ currentPos.x, currentPos.y }, { nextPos.x, nextPos.y }, blockRect, tTemp))
+                    if (!block.destroyed)
                     {
-                        // Обновляем позицию до точки столкновения
-                        int collideX = static_cast<int>(currentPos.x + stepDx);// тут было * tTemp
-                        int collideY = static_cast<int>(currentPos.y + stepDy);
-                       
-                        // Обновляем позицию мяча
-                        //int ballsize = ballRect.right - ballRect.left;
-                        SetRect(&ballRect,
-                            collideX - ballsize / 2,
-                            collideY - ballsize / 2,
-                            collideX + ballsize / 2,
-                            collideY + ballsize / 2);
-                        // Определяем сторону столкновения
-                        if /*(side == 0 || side == 2)*/ (blockRect.left < collideY < blockRect.right && (blockRect.left < (collideY-stepDy) < blockRect.right))
+                        RECT blockRect = block.rect;
+                        double tTemp;
+                        if (LineIntersectsRect({ currentPos.x, currentPos.y }, { nextPos.x, nextPos.y }, blockRect, tTemp))
                         {
-                            // Столкновение с боковой стороной
-                            dy = -abs(dy+ballspeed); // Отразить по X
+                            // Обновляем позицию до точки столкновения
+                            int collideX = static_cast<int>(currentPos.x + stepDx);// тут было * tTemp
+                            int collideY = static_cast<int>(currentPos.y + stepDy);
+
+                            // Обновляем позицию мяча
+                            //int ballsize = ballRect.right - ballRect.left;
+                            SetRect(&ballRect,
+                                collideX - ballsize / 2,
+                                collideY - ballsize / 2,
+                                collideX + ballsize / 2,
+                                collideY + ballsize / 2);
+                            // Определяем сторону столкновения
+                            if /*(side == 0 || side == 2)*/ (blockRect.left - 1 <= collideX <= blockRect.right + 1)
+                            {
+                                // Столкновение с верхней или нижней стороной
+                                dy = -(dy); // Отразить по Y
+                            }
+                            if /*(side == 1 || side == 3)*/ (blockRect.top - 1 <= collideY <= blockRect.bottom + 1)
+                            {
+                                // Столкновение с боковой стороной
+                                dx = -(dx); // Отразить по X
+                            }
+
+                            // Удаляем блок или помечаем как уничтоженный
+                            block.destroyed = true;
+                            collisionDetected = true;
+                            break; // Можно продолжить или прервать по необходимости
                         }
-                        if /*(side == 1 || side == 3)*/ (blockRect.top < collideX < blockRect.bottom)
-                        {
-                            // Столкновение с верхней или нижней стороной
-                            dx = -abs(dx + ballspeed); // Отразить по Y
-                        }
-                        
-                        // Удаляем блок или помечаем как уничтоженный
-                        block.destroyed = true;
-                        collisionDetected = true;
-                        break; // Можно продолжить или прервать по необходимости
                     }
                 }
+                currentPos = nextPos;
+                if (collisionDetected)
+                    break;
+
             }
-            if (collisionDetected)
-                break;
-            currentPos = nextPos;
-        }
+            //столкновение по окнам
             if (!collisionDetected)
             {
                 //int ballsize = ballRect.right - ballRect.left;
                 // Обновляем позицию мяча на основе полного перемещения
-                    newX = startPos.x + static_cast<int>(dx);
-                    newY = startPos.y + static_cast<int>(dy);
+                newX = startPos.x + static_cast<int>(dx);
+                newY = startPos.y + static_cast<int>(dy);
 
                 // Проверка ракетки (если мяч касается или ниже верхней части ракетки)
                 if (newY + ballsize / 2 >= paddleRect.top &&
                     newX >= paddleRect.left && newX <= paddleRect.right)
                 {
-                    dy = -abs(dy+ballspeed); // отскок вверх
+                    dy = -(dy + ballspeed); // отскок вверх
                     newY = paddleRect.top - ballsize / 2; // корректируем позицию
                 }
 
@@ -570,10 +573,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 GetClientRect(hwnd, &clientRect);
 
                 if (newX - ballsize / 2 <= clientRect.left || newX + ballsize / 2 >= clientRect.right)
-                    dx = -abs(dx+ballspeed);
+                    dx = -(dx + ballspeed);
 
                 if (newY - ballsize / 2 <= clientRect.top)
-                    dy = -abs(dy+ballspeed);
+                    dy = -(dy + ballspeed);
 
                 if (newY + ballsize / 2 >= clientRect.bottom)
                 {
@@ -591,10 +594,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     newY + ballsize / 2);
             }
 
-            
+
 
             // Обработка управления ракеткой и перерисовка...
-            if (isLeftPressed) 
+            if (isLeftPressed)
             {
                 OffsetRect(&paddleRect, -5, 0);
                 // Проверка границ
@@ -602,7 +605,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
             }
 
-            if (isRightPressed) 
+            if (isRightPressed)
             {
                 OffsetRect(&paddleRect, 5, 0);
                 // Проверка границ
@@ -613,105 +616,105 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             InvalidateRect(hwnd, NULL, TRUE); // перерисовать окно
 
             break;
-        }   //старая проверка
-        /* Проверка столкновения с границами окна
-            if (ballRect.left <= 0 || ballRect.right >= 800)
-            {
-                //OffsetRect(&ballRect, -dx / abs(dx) * 2, 0); // отражение по X
-                dx = -dx;
+            //старая проверка
+         /* Проверка столкновения с границами окна
+             if (ballRect.left <= 0 || ballRect.right >= 800)
+             {
+                 //OffsetRect(&ballRect, -dx / abs(dx) * 2, 0); // отражение по X
+                 dx = -dx;
 
-            }
+             }
 
-            if (ballRect.top <= 0)
-            {
-                //OffsetRect(&ballRect, 0, -dy / abs(dy)); // отражение по Y
-                dy = -dy;
+             if (ballRect.top <= 0)
+             {
+                 //OffsetRect(&ballRect, 0, -dy / abs(dy)); // отражение по Y
+                 dy = -dy;
 
-            }
+             }
 
-        if (ballRect.bottom >= 650)
-        {
-            // Мяч упал вниз - сбросим позицию
-            SetRect(&ballRect, 390, 530, 410, 550);
-            dy = -4;
+         if (ballRect.bottom >= 650)
+         {
+             // Мяч упал вниз - сбросим позицию
+             SetRect(&ballRect, 390, 530, 410, 550);
+             dy = -4;
+         }
+
+         // Столкновение с ракеткой
+         /////
+         const float M_PI = 3.14159265358979323846f;
+         const float MAX_ANGLE = 75 * M_PI / 180; // переводим в радианы
+         float ballX = (ballRect.right - ballRect.left) / 2;
+         float ballY = (ballRect.bottom - ballRect.top) / 2;
+         float ballrad = ballX;
+         float paddleX = (paddleRect.right - paddleRect.left) / 2;
+         float paddleY = (paddleRect.bottom - paddleRect.top) / 2;
+         float paddleW = paddleX * 2;
+
+          if (ballRect.bottom >= paddleRect.top)
+             {
+
+                 // Расчет точки удара по ракетке
+              float hitPos = ((ballRect.right - ballrad) - (paddleRect.right - paddleX)) / (paddleW);
+
+                 if (hitPos < 0) hitPos = 0;
+                 if (hitPos > 1) hitPos = 1;
+
+                 // Угол отклонения
+                 float angle = (hitPos - 0.5f) * MAX_ANGLE;
+
+                 // Текущая скорость мяча
+                 float speed = sqrt(dx * dx + dy * dy);
+
+                 // Обновление скорости мяча
+                 dx = speed * sin(angle);
+                 dy = -abs(speed * cos(angle));
+             }
+         /////
+         if (ballRect.right >= paddleRect.left && ballRect.left <= paddleRect.right &&
+             ballRect.bottom >= paddleRect.top && ballRect.top <= paddleRect.bottom)
+         {
+             dy = -abs(dy);
+         }
+
+
+         // Проверка столкновения с блоками
+         for (auto& block : blocks)
+         {
+             if (!block.destroyed && ballRect.right >= block.rect.left && ballRect.left <= block.rect.right &&
+                 ballRect.bottom >= block.rect.top && ballRect.top <= block.rect.bottom) //intersectrect не регистрирует столкновения
+             {
+                 block.destroyed = true;
+                 //OffsetRect(&ballRect, 0, -(ballRect.bottom - block.rect.top));
+                 dy = -dy;
+                 break;
+             }
+         }
+
+         // Обновление позиции мяча
+         OffsetRect(&ballRect, dx, dy);
+
+         if (isLeftPressed)
+         {
+             OffsetRect(&paddleRect, -5, 0);
+             // Проверка границ
+             if (paddleRect.left < 0)
+                 SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
+         }
+
+         if (isRightPressed)
+         {
+             OffsetRect(&paddleRect, 5, 0);
+             // Проверка границ
+             if (paddleRect.right > 800)
+                 SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
+         }
+
+         InvalidateRgn(hwnd, NULL, FALSE); // перерисовать окно
+
+         break;
+
+     } */
         }
-
-        // Столкновение с ракеткой
-        /////
-        const float M_PI = 3.14159265358979323846f;
-        const float MAX_ANGLE = 75 * M_PI / 180; // переводим в радианы
-        float ballX = (ballRect.right - ballRect.left) / 2;
-        float ballY = (ballRect.bottom - ballRect.top) / 2;
-        float ballrad = ballX;
-        float paddleX = (paddleRect.right - paddleRect.left) / 2;
-        float paddleY = (paddleRect.bottom - paddleRect.top) / 2;
-        float paddleW = paddleX * 2;
-
-         if (ballRect.bottom >= paddleRect.top)
-            {
-
-                // Расчет точки удара по ракетке
-             float hitPos = ((ballRect.right - ballrad) - (paddleRect.right - paddleX)) / (paddleW);
-
-                if (hitPos < 0) hitPos = 0;
-                if (hitPos > 1) hitPos = 1;
-
-                // Угол отклонения
-                float angle = (hitPos - 0.5f) * MAX_ANGLE;
-
-                // Текущая скорость мяча
-                float speed = sqrt(dx * dx + dy * dy);
-
-                // Обновление скорости мяча
-                dx = speed * sin(angle);
-                dy = -abs(speed * cos(angle));
-            }
-        /////
-        if (ballRect.right >= paddleRect.left && ballRect.left <= paddleRect.right &&
-            ballRect.bottom >= paddleRect.top && ballRect.top <= paddleRect.bottom)
-        {
-            dy = -abs(dy);
-        }
-
-
-        // Проверка столкновения с блоками
-        for (auto& block : blocks)
-        {
-            if (!block.destroyed && ballRect.right >= block.rect.left && ballRect.left <= block.rect.right &&
-                ballRect.bottom >= block.rect.top && ballRect.top <= block.rect.bottom) //intersectrect не регистрирует столкновения
-            {
-                block.destroyed = true;
-                //OffsetRect(&ballRect, 0, -(ballRect.bottom - block.rect.top));
-                dy = -dy;
-                break;
-            }
-        }
-
-        // Обновление позиции мяча
-        OffsetRect(&ballRect, dx, dy);
-
-        if (isLeftPressed) 
-        {
-            OffsetRect(&paddleRect, -5, 0);
-            // Проверка границ
-            if (paddleRect.left < 0)
-                SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
-        }
-
-        if (isRightPressed) 
-        {
-            OffsetRect(&paddleRect, 5, 0);
-            // Проверка границ
-            if (paddleRect.right > 800)
-                SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
-        }
-
-        InvalidateRgn(hwnd, NULL, FALSE); // перерисовать окно
-
-        break;
-
-    } */
-
     case WM_KEYDOWN:
     {
         if (wParam == VK_LEFT) isLeftPressed = true;
