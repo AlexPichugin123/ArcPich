@@ -455,23 +455,23 @@ struct Block {
     HBRUSH brush;
     bool destroyed;
 };
+
 // Глобальные переменные
 HBRUSH hBlockBrush; // кисть для блоков
 HBRUSH hPaddleBrush; // кисть для ракетки
 HBRUSH hBallBrush;   // кисть для мяча
-
 static std::vector<Block> blocks;
 static RECT paddleRect;
 static RECT ballRect;
 static bool isLeftPressed = false, isRightPressed = false;
-void CheckCollisions(HWND hwnd);
 
 // Объявление функций
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRect);
+void CheckCollisions(HWND hwnd);
 
 //main
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) 
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     WNDCLASSEX wc = { sizeof(WNDCLASSEX) };
     wc.style = 0;
@@ -508,12 +508,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     }
     return (int)msg.wParam;
 }
+
 // Инициализация игровых объектов
 void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRect) {
     // Создаем кисти
     hBlockBrush = CreateSolidBrush(RGB(200, 50, 50));   // красные блоки
     hPaddleBrush = CreateSolidBrush(RGB(50, 50, 200)); // синяя ракетка
     hBallBrush = CreateSolidBrush(RGB(255, 255, 0));   // желтый мяч
+
     // Создаем блоки
     int blockRows = 5;
     int blockCols = 10;
@@ -535,11 +537,11 @@ void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRec
 
     // Создаем ракетку
     paddleRect.left = 350; paddleRect.top = 550; paddleRect.right = 450; paddleRect.bottom = 570;
-    
+
     // Создаем мяч
     ballRect.left = 390; ballRect.top = 530; ballRect.right = 410; ballRect.bottom = 550;
-    
 }
+
 // Упрощённая проверка коллизий
 void CheckCollisions(HWND hwnd) {
     // Сохраняем начальную позицию мяча
@@ -599,7 +601,7 @@ void CheckCollisions(HWND hwnd) {
     if (ballCenter.y + ballsize / 2 >= paddleRect.top &&
         ballCenter.x >= paddleRect.left - ballsize / 2 &&
         ballCenter.x <= paddleRect.right + ballsize / 2) {
-        dy = -dy*1.3;
+        dy = -abs(dy);
         ballCenter.y = paddleRect.top - ballsize / 2;
     }
 
@@ -630,9 +632,9 @@ void CheckCollisions(HWND hwnd) {
         ballCenter.x + ballsize / 2,
         ballCenter.y + ballsize / 2);
 }
-//непосредтсвенно отрисовка
-static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
-{ 
+
+// Отрисовка
+static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS) {
     RECT rc;
     HDC hdcMem;
     HBITMAP hbmMem, hbmOld;
@@ -640,158 +642,120 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
 
     GetClientRect(hwnd, &rc);
     hdcMem = CreateCompatibleDC(lpPS->hdc);
-    hbmMem = CreateCompatibleBitmap(lpPS->hdc,
-        rc.right - rc.left,
-        rc.bottom - rc.top);
-    hbmOld = (HBITMAP)SelectObject(hdcMem, hbmMem);//тут с преобразованием типов данных прикол
-    
-    //чистим фон
+    hbmMem = CreateCompatibleBitmap(lpPS->hdc, rc.right - rc.left, rc.bottom - rc.top);
+    hbmOld = (HBITMAP)SelectObject(hdcMem, hbmMem);
+
+    // Очищаем фон
     hbrBkGnd = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
     FillRect(hdcMem, &rc, hbrBkGnd);
     DeleteObject(hbrBkGnd);
-
 
     // Отрисовка ракетки
     {
         HRGN hPaddleRegion = CreateRectRgn(paddleRect.left, paddleRect.top, paddleRect.right, paddleRect.bottom);
         FillRgn(hdcMem, hPaddleRegion, hPaddleBrush);
         DeleteObject(hPaddleRegion);
-
-        HBRUSH hOldBrush = (HBRUSH)SelectObject(hdcMem, hPaddleBrush);
-        Rectangle(hdcMem, paddleRect.left, paddleRect.top, paddleRect.right, paddleRect.bottom);
-        SelectObject(hdcMem, hOldBrush);
-        
     }
+
     // Отрисовка мяча
     {
-       
         HBRUSH hOldBrush = (HBRUSH)SelectObject(hdcMem, hBallBrush);
         Ellipse(hdcMem, ballRect.left, ballRect.top, ballRect.right, ballRect.bottom);
         SelectObject(hdcMem, hOldBrush);
-        //SetPixel(hdcMem, currentPos1.x, currentPos1.y, RGB(0, 250, 0)); //надо как-то трасировку отобразить 
-        
-        
     }
-    
+
     // Отрисовка блоков
-    for (const auto& block : blocks)
-    {
-        if (!block.destroyed)
-        {
+    for (const auto& block : blocks) {
+        if (!block.destroyed) {
             HRGN hRegion = CreateRectRgn(block.rect.left, block.rect.top, block.rect.right, block.rect.bottom);
             FillRgn(hdcMem, hRegion, hBlockBrush);
             DeleteObject(hRegion);
         }
     }
-    
-    //
-    // Blt the changes to the screen DC.
-    //
-    BitBlt(lpPS->hdc,
-        rc.left, rc.top,
-        rc.right - rc.left, rc.bottom - rc.top,
-        hdcMem,
-        0, 0,
-        SRCCOPY);
-    //
-    // Done with off-screen bitmap and DC.
-    //
+
+    BitBlt(lpPS->hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+        hdcMem, 0, 0, SRCCOPY);
+
     SelectObject(hdcMem, hbmOld);
     DeleteObject(hbmMem);
     DeleteDC(hdcMem);
 }
 
-//основная функция
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
+// Обработчик сообщений
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     PAINTSTRUCT ps;
 
-    switch (msg)
-    {
-    case WM_CREATE:
-    {
+    switch (msg) {
+    case WM_CREATE: {
         InitGameObjects(blocks, paddleRect, ballRect);
-        SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры
+        SetTimer(hwnd, 1, TimPer, NULL);
         break;
     }
 
-        case WM_TIMER:
-        {
-            CheckCollisions(hwnd);
+    case WM_TIMER: {
+        CheckCollisions(hwnd);
 
-            // Управление ракеткой
-            if (isLeftPressed) {
-                OffsetRect(&paddleRect, -5, 0);
-                if (paddleRect.left < 0)
-                    SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
-            }
-
-            if (isRightPressed) {
-                OffsetRect(&paddleRect, 5, 0);
-                if (paddleRect.right > 800)
-                    SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
-            }
-
-            InvalidateRect(hwnd, NULL, TRUE);
-            break;
+        // Управление ракеткой
+        if (isLeftPressed) {
+            OffsetRect(&paddleRect, -5, 0);
+            if (paddleRect.left < 0)
+                SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
         }
-    case WM_KEYDOWN:
-    {
+
+        if (isRightPressed) {
+            OffsetRect(&paddleRect, 5, 0);
+            if (paddleRect.right > 800)
+                SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
+        }
+
+        InvalidateRect(hwnd, NULL, TRUE);
+        break;
+    }
+
+    case WM_KEYDOWN: {
         if (wParam == VK_LEFT) isLeftPressed = true;
         if (wParam == VK_RIGHT) isRightPressed = true;
         break;
     }
 
-    case WM_KEYUP:
-    {
+    case WM_KEYUP: {
         if (wParam == VK_LEFT) isLeftPressed = false;
         if (wParam == VK_RIGHT) isRightPressed = false;
         break;
     }
-    case WM_MOUSEMOVE:
-    {
-        POINT pt = { (short)LOWORD(lParam),(short)HIWORD(lParam) };
-        if (pt.x > paddleRect.left && pt.x < paddleRect.right)
-        {
+
+    case WM_MOUSEMOVE: {
+        POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+        if (pt.x > paddleRect.left && pt.x < paddleRect.right) {
             SetRect(&paddleRect, pt.x - 50, paddleRect.top, pt.x + 50, paddleRect.bottom);
-            InvalidateRgn(hwnd, NULL, FALSE);
+            InvalidateRect(hwnd, NULL, FALSE);
         }
         break;
     }
 
     case WM_ERASEBKGND:
-        return (LRESULT)1; // Say we handled it.
+        return (LRESULT)1;
 
-
-    case WM_PAINT:
-    {
-
+    case WM_PAINT: {
         BeginPaint(hwnd, &ps);
         Paint(hwnd, &ps);
         EndPaint(hwnd, &ps);
         break;
     }
 
-    case WM_DESTROY:
-    {
+    case WM_DESTROY: {
         DeleteObject(hBlockBrush);
         DeleteObject(hPaddleBrush);
         DeleteObject(hBallBrush);
-
         KillTimer(hwnd, 1);
-
         PostQuitMessage(0);
-
         break;
-
     }
+
     default:
         return DefWindowProc(hwnd, msg, wParam, lParam);
-        
-    
-   }
+    }
 
     return NULL;
 }
-
 #endif // vv2
