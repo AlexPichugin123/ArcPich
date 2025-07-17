@@ -414,65 +414,36 @@ static void Paint(HWND hwnd, LPPAINTSTRUCT lpPS)
     DeleteDC(hdcMem);
 }
 
-//коллизия
-bool LineIntersectsRect(const POINT& p1, const POINT& p2, const RECT& rect, double& t)
+// Упрощенная проверка коллизии с определением стороны
+bool CheckCollisionWithSide(const RECT& ball, const RECT& block, int& collisionSide)
 {
-    // Функции для проверки пересечения линий
-    auto LineSegmentsIntersect = [](double x1, double y1, double x2, double y2,
-        double x3, double y3, double x4, double y4,
-        double& t)
-        {
-            // Вычисляем параметры
-            double denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-            if (fabs(denom) < 1e-8)
-                return false; // параллельны
+    if (!(ball.right > block.left && ball.left < block.right &&
+          ball.bottom > block.top && ball.top < block.bottom))
+        return false;
 
-            double t_num = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
-            t = t_num / denom;
+    //// Определяем сторону столкновения
+    //int ballCenterX = (ball.left + ball.right) / 2;
+    //int ballCenterY = (ball.top + ball.bottom) / 2;
+    //int blockCenterX = (block.left + block.right) / 2;
+    //int blockCenterY = (block.top + block.bottom) / 2;
 
-            double u_num = (x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2);
-            double u = u_num / denom;
+    // Вычисляем перекрытия по каждой оси
+    int overlapLeft = ball.right - block.left;
+    int overlapRight = block.right - ball.left;
+    int overlapTop = ball.bottom - block.top;
+    int overlapBottom = block.bottom - ball.top;
 
-            if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
-                return true;
-            return false;
-        };
+    // Находим минимальное перекрытие
+    int minOverlap = (overlapLeft < overlapRight) ? overlapLeft : overlapRight;
 
-    // Определяем стороны прямоугольника
-    POINT sides[4][2] = {
-        { {rect.left, rect.top}, {rect.right, rect.top} },//top
-        { {rect.right, rect.top}, {rect.right, rect.bottom} },//right
-        { {rect.right, rect.bottom}, {rect.left, rect.bottom} },//bottom
-        { {rect.left, rect.bottom}, {rect.left, rect.top} }//left
-    };
+    if (minOverlap == overlapTop) collisionSide = 0;    // Верх
+    else if (minOverlap == overlapRight) collisionSide = 1; // Право
+    else if (minOverlap == overlapBottom) collisionSide = 2; // Низ
+    else collisionSide = 3; // Лево
 
-    bool hit = false;
-    double minT = 1.0;
-
-    for (int i = 0; i < 4; ++i)
-    {
-        double tTemp;
-        if (LineSegmentsIntersect(p1.x, p1.y, p2.x, p2.y,
-            sides[i][0].x, sides[i][0].y, sides[i][1].x, sides[i][1].y,
-            tTemp))
-        {
-            if (tTemp < minT)
-            {
-                minT = tTemp;
-                hit = true;
-                side = i;
-                break;
-            }
-        }
-    }
-
-    if (hit)
-    {
-        t = minT;
-        return true;
-    }
-    return false;
+    return true;
 }
+
 //основная функция
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -485,236 +456,163 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         RECT r;
         GetClientRect(hwnd, &r);
-        //auto window_width = r.right - r.left;//определяем размеры и сохраняем
-        //auto window_height = r.bottom - r.top;
         InitGameObjects(blocks, paddleRect, ballRect);
         SetTimer(hwnd, 1, TimPer, NULL); // 1000/2ой параматер = фпс, таймер для обновления игры
 
         break;
     }
 
-        case WM_TIMER:
+    case WM_TIMER:
+    {
+        // Трассировка движения мяча с шагами
+        bool collisionDetected = false;
+        RECT originalBallRect = ballRect;
+
+        for (int i = 1; i <= steps && !collisionDetected; ++i)
         {
-            // Начальные и конечные позиции центра мяча
-            POINT startPos = { ballRect.left + ballsize / 2 , ballRect.top + ballsize / 2 };
-            POINT endPos = { startPos.x + dx, startPos.y + dy };
-            POINT currentPos = startPos;
-            bool collisionDetected = false;
-            double collisionT = 1.0; // по умолчанию — полного пути
+            // Промежуточная позиция мяча
+            RECT tempBallRect = originalBallRect;
+            OffsetRect(&tempBallRect, dx * i / steps, dy * i / steps);
 
-            for (int i = 0; i < steps; ++i)
+            // Проверка столкновений с блоками
+            for (auto& block : blocks)
             {
-
-                POINT nextPos = { static_cast<int>(currentPos.x + stepDx), static_cast<int>(currentPos.y + stepDy) };
-                //currentPos1 = nextPos;
-
-                // Проверка столкновений с блоками
-                for (auto& block : blocks)
+                if (!block.destroyed && CheckCollisionWithSide(tempBallRect, block.rect, side))
                 {
-                    if (!block.destroyed)
+                    collisionDetected = true;
+                    block.destroyed = true;
+
+                    // Корректируем позицию перед отскоком
+                    switch (side)
                     {
-                        RECT blockRect = block.rect;
-                        double tTemp;
-                        if (LineIntersectsRect({ currentPos.x, currentPos.y }, { nextPos.x, nextPos.y }, blockRect, tTemp))
-                        {
-                            // Обновляем позицию до точки столкновения
-                            int collideX = static_cast<int>(currentPos.x + stepDx);// тут было * tTemp
-                            int collideY = static_cast<int>(currentPos.y + stepDy);
+                    case 0: // Верх блока
+                        tempBallRect.bottom = block.rect.top;
+                        tempBallRect.top = tempBallRect.bottom - (originalBallRect.bottom - originalBallRect.top);
+                        dy = -abs(dy); // Гарантированный отскок вверх
+                        break;
 
-                            // Обновляем позицию мяча
-                            //int ballsize = ballRect.right - ballRect.left;
-                            SetRect(&ballRect,
-                                collideX - ballsize / 2,
-                                collideY - ballsize / 2,
-                                collideX + ballsize / 2,
-                                collideY + ballsize / 2);
-                            // Определяем сторону столкновения
-                            if /*(side == 0 || side == 2)*/ (blockRect.left - 1 <= collideX <= blockRect.right + 1)
-                            {
-                                // Столкновение с верхней или нижней стороной
-                                dy = -(dy); // Отразить по Y
-                            }
-                            if /*(side == 1 || side == 3)*/ (blockRect.top - 1 <= collideY <= blockRect.bottom + 1)
-                            {
-                                // Столкновение с боковой стороной
-                                dx = -(dx); // Отразить по X
-                            }
+                    case 2: // Низ блока
+                        tempBallRect.top = block.rect.bottom;
+                        tempBallRect.bottom = tempBallRect.top + (originalBallRect.bottom - originalBallRect.top);
+                        dy = abs(dy); // Гарантированный отскок вниз
+                        break;
 
-                            // Удаляем блок или помечаем как уничтоженный
-                            block.destroyed = true;
-                            collisionDetected = true;
-                            break; // Можно продолжить или прервать по необходимости
-                        }
+                    case 1: // Право блока
+                        tempBallRect.left = block.rect.right;
+                        tempBallRect.right = tempBallRect.left + (originalBallRect.right - originalBallRect.left);
+                        dx = abs(dx); // Вправо
+                        break;
+
+                    case 3: // Лево блока
+                        tempBallRect.right = block.rect.left;
+                        tempBallRect.left = tempBallRect.right - (originalBallRect.right - originalBallRect.left);
+                        dx = -abs(dx); // Влево
+                        break;
                     }
-                }
-                currentPos = nextPos;
-                if (collisionDetected)
-                    break;
 
+                    // Добавляем небольшую вариацию
+                    dx += (rand() % 3 - 1) * 0.5f;
+
+                    ballRect = tempBallRect;
+                    break;
+                }
             }
-            //столкновение по окнам
+
             if (!collisionDetected)
             {
-                //int ballsize = ballRect.right - ballRect.left;
-                // Обновляем позицию мяча на основе полного перемещения
-                newX = startPos.x + static_cast<int>(dx);
-                newY = startPos.y + static_cast<int>(dy);
-
-                // Проверка ракетки (если мяч касается или ниже верхней части ракетки)
-                if (newY + ballsize / 2 >= paddleRect.top &&
-                    newX >= paddleRect.left && newX <= paddleRect.right)
+                // Проверка ракетки (с гарантированным отскоком вверх)
+                if (CheckCollisionWithSide(tempBallRect, paddleRect, side))
                 {
-                    dy = -(dy + ballspeed); // отскок вверх
-                    newY = paddleRect.top - ballsize / 2; // корректируем позицию
-                }
+                    collisionDetected = true;
 
+                    // Корректировка позиции
+                    tempBallRect.bottom = paddleRect.top;
+                    tempBallRect.top = tempBallRect.bottom - (originalBallRect.bottom - originalBallRect.top);
+
+                    // Физика отскока
+                    int ballCenterX = (tempBallRect.left + tempBallRect.right) / 2;
+                    int paddleCenterX = (paddleRect.left + paddleRect.right) / 2;
+                    int hitOffset = (ballCenterX - paddleCenterX) / 10;
+
+                    dy = -abs(dy + ballspeed); // Гарантированный отскок вверх
+                    dx += hitOffset;
+
+                    ballRect = tempBallRect;
+                }
+            }
+
+            if (!collisionDetected)
+            {
                 // Проверка границ окна
                 RECT clientRect;
                 GetClientRect(hwnd, &clientRect);
 
-                if (newX - ballsize / 2 <= clientRect.left || newX + ballsize / 2 >= clientRect.right)
-                    dx = -(dx + ballspeed);
-
-                if (newY - ballsize / 2 <= clientRect.top)
-                    dy = -(dy + ballspeed);
-
-                if (newY + ballsize / 2 >= clientRect.bottom)
+                if (tempBallRect.left <= clientRect.left)
                 {
-                    // Мяч упал вниз — сбросить позицию или обработать проигрыш
-                    SetRect(&ballRect, 390, 530, 410, 550);
-                    dy = dy1; // восстановить скорость по Y или задать новую
-                    break;
+                    tempBallRect.left = clientRect.left;
+                    tempBallRect.right = tempBallRect.left + (originalBallRect.right - originalBallRect.left);
+                    dx = abs(dx); // Гарантированный отскок вправо
+                    collisionDetected = true;
+                }
+                else if (tempBallRect.right >= clientRect.right)
+                {
+                    tempBallRect.right = clientRect.right;
+                    tempBallRect.left = tempBallRect.right - (originalBallRect.right - originalBallRect.left);
+                    dx = -abs(dx); // Гарантированный отскок влево
+                    collisionDetected = true;
                 }
 
-                // Обновляем позицию мяча только после всех проверок
-                SetRect(&ballRect,
-                    newX - ballsize / 2,
-                    newY - ballsize / 2,
-                    newX + ballsize / 2,
-                    newY + ballsize / 2);
+                if (tempBallRect.top <= clientRect.top)
+                {
+                    tempBallRect.top = clientRect.top;
+                    tempBallRect.bottom = tempBallRect.top + (originalBallRect.bottom - originalBallRect.top);
+                    dy = abs(dy); // Гарантированный отскок вниз
+                    collisionDetected = true;
+                }
+                else if (tempBallRect.bottom >= clientRect.bottom)
+                {
+                    // Мяч упал - сброс позиции
+                    SetRect(&ballRect, 390, 530, 410, 550);
+                    dy = -abs(dy); // Гарантированный старт вверх
+                    collisionDetected = true;
+                    break; // Прерываем цикл трассировки
+                }
+
+                if (collisionDetected)
+                {
+                    ballRect = tempBallRect;
+                }
             }
-
-
-
-            // Обработка управления ракеткой и перерисовка...
-            if (isLeftPressed)
-            {
-                OffsetRect(&paddleRect, -5, 0);
-                // Проверка границ
-                if (paddleRect.left < 0)
-                    SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
-            }
-
-            if (isRightPressed)
-            {
-                OffsetRect(&paddleRect, 5, 0);
-                // Проверка границ
-                if (paddleRect.right > 800)
-                    SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
-            }
-
-            InvalidateRect(hwnd, NULL, TRUE); // перерисовать окно
-
-            break;
-            //старая проверка
-         /* Проверка столкновения с границами окна
-             if (ballRect.left <= 0 || ballRect.right >= 800)
-             {
-                 //OffsetRect(&ballRect, -dx / abs(dx) * 2, 0); // отражение по X
-                 dx = -dx;
-
-             }
-
-             if (ballRect.top <= 0)
-             {
-                 //OffsetRect(&ballRect, 0, -dy / abs(dy)); // отражение по Y
-                 dy = -dy;
-
-             }
-
-         if (ballRect.bottom >= 650)
-         {
-             // Мяч упал вниз - сбросим позицию
-             SetRect(&ballRect, 390, 530, 410, 550);
-             dy = -4;
-         }
-
-         // Столкновение с ракеткой
-         /////
-         const float M_PI = 3.14159265358979323846f;
-         const float MAX_ANGLE = 75 * M_PI / 180; // переводим в радианы
-         float ballX = (ballRect.right - ballRect.left) / 2;
-         float ballY = (ballRect.bottom - ballRect.top) / 2;
-         float ballrad = ballX;
-         float paddleX = (paddleRect.right - paddleRect.left) / 2;
-         float paddleY = (paddleRect.bottom - paddleRect.top) / 2;
-         float paddleW = paddleX * 2;
-
-          if (ballRect.bottom >= paddleRect.top)
-             {
-
-                 // Расчет точки удара по ракетке
-              float hitPos = ((ballRect.right - ballrad) - (paddleRect.right - paddleX)) / (paddleW);
-
-                 if (hitPos < 0) hitPos = 0;
-                 if (hitPos > 1) hitPos = 1;
-
-                 // Угол отклонения
-                 float angle = (hitPos - 0.5f) * MAX_ANGLE;
-
-                 // Текущая скорость мяча
-                 float speed = sqrt(dx * dx + dy * dy);
-
-                 // Обновление скорости мяча
-                 dx = speed * sin(angle);
-                 dy = -abs(speed * cos(angle));
-             }
-         /////
-         if (ballRect.right >= paddleRect.left && ballRect.left <= paddleRect.right &&
-             ballRect.bottom >= paddleRect.top && ballRect.top <= paddleRect.bottom)
-         {
-             dy = -abs(dy);
-         }
-
-
-         // Проверка столкновения с блоками
-         for (auto& block : blocks)
-         {
-             if (!block.destroyed && ballRect.right >= block.rect.left && ballRect.left <= block.rect.right &&
-                 ballRect.bottom >= block.rect.top && ballRect.top <= block.rect.bottom) //intersectrect не регистрирует столкновения
-             {
-                 block.destroyed = true;
-                 //OffsetRect(&ballRect, 0, -(ballRect.bottom - block.rect.top));
-                 dy = -dy;
-                 break;
-             }
-         }
-
-         // Обновление позиции мяча
-         OffsetRect(&ballRect, dx, dy);
-
-         if (isLeftPressed)
-         {
-             OffsetRect(&paddleRect, -5, 0);
-             // Проверка границ
-             if (paddleRect.left < 0)
-                 SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
-         }
-
-         if (isRightPressed)
-         {
-             OffsetRect(&paddleRect, 5, 0);
-             // Проверка границ
-             if (paddleRect.right > 800)
-                 SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
-         }
-
-         InvalidateRgn(hwnd, NULL, FALSE); // перерисовать окно
-
-         break;
-
-     } */
         }
+
+        if (!collisionDetected)
+        {
+            OffsetRect(&ballRect, dx, dy);
+        }
+
+        // Управление ракеткой (без изменений)
+        if (isLeftPressed)
+        {
+            OffsetRect(&paddleRect, -5, 0);
+            RECT clientRect;
+            GetClientRect(hwnd, &clientRect);
+            if (paddleRect.left < clientRect.left)
+                OffsetRect(&paddleRect, clientRect.left - paddleRect.left, 0);
+        }
+
+        if (isRightPressed)
+        {
+            OffsetRect(&paddleRect, 5, 0);
+            RECT clientRect;
+            GetClientRect(hwnd, &clientRect);
+            if (paddleRect.right > clientRect.right)
+                OffsetRect(&paddleRect, clientRect.right - paddleRect.right, 0);
+        }
+
+        InvalidateRect(hwnd, NULL, TRUE);
+        break;
+    }
+    
     case WM_KEYDOWN:
     {
         if (wParam == VK_LEFT) isLeftPressed = true;
@@ -728,6 +626,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam == VK_RIGHT) isRightPressed = false;
         break;
     }
+   
     case WM_MOUSEMOVE:
     {
         POINT pt = { (short)LOWORD(lParam),(short)HIWORD(lParam) };
@@ -768,7 +667,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hwnd, msg, wParam, lParam);
         break;
     }
-   }
+    }
 
     return NULL;
 }
