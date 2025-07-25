@@ -554,8 +554,9 @@ void CheckCollisions(HWND hwnd) {
 
     // Разбиваем движение на подшаги
     bool collisionDetected = false;
-
-    for (int i = 1; i <= steps; ++i) {
+    int steps = sqrt(dy * dy + dx * dx);
+    for (int i = 1; i <= steps; ++i) 
+    {
         // Промежуточная позиция
         POINT currentPos = {
             startPos.x + (dx * i) / steps,
@@ -601,7 +602,8 @@ void CheckCollisions(HWND hwnd) {
     if (ballCenter.y + ballsize / 2 >= paddleRect.top &&
         ballCenter.x >= paddleRect.left - ballsize / 2 &&
         ballCenter.x <= paddleRect.right + ballsize / 2) {
-        dy = -abs(dy);
+        dy = -abs(dy*1.5);
+        dx = 3;//удалить
         ballCenter.y = paddleRect.top - ballsize / 2;
     }
 
