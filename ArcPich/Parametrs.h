@@ -13,3 +13,4 @@ int newX;
 int newY;
 int side;
 int ballsize = 20;
+const double PI = acos(-1.0);

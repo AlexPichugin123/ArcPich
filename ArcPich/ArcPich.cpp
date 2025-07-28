@@ -551,10 +551,22 @@ void CheckCollisions(HWND hwnd) {
     // Трассировка (для предотвращения проскакивания)
     std::vector<POINT> trace;
     trace.push_back(startPos);
-
     // Разбиваем движение на подшаги
     bool collisionDetected = false;
     int steps = sqrt(dy * dy + dx * dx);
+
+    POINT NormalizeVector; 
+    NormalizeVector.x = dx / steps, NormalizeVector.y = dy / steps; //проверка что вектор единичной длинны
+    float Angle = atan2(NormalizeVector.y, NormalizeVector.x);// находим угол между вектором движения и осью Х
+    POINT Sphere;
+    float Predel;
+    for (Predel = -PI / 2; Predel != PI / 2; Predel += PI / 4)//пи/2 дает 3 точки проверки, пи/4 дает 5 точек 
+    {
+        Sphere.x = currentPos.x + ((ballsize / 2) * cos(Predel + Angle));
+        Sphere.x = currentPos.y + ((ballsize / 2) * sin(Predel + Angle));
+    }
+    //надо этот цикл с пределом
+    
     for (int i = 1; i <= steps; ++i) 
     {
         // Промежуточная позиция
