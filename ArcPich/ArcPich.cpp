@@ -542,6 +542,40 @@ void InitGameObjects(std::vector<Block>& blocks, RECT& paddleRect, RECT& ballRec
     ballRect.left = 390; ballRect.top = 530; ballRect.right = 410; ballRect.bottom = 550;
 }
 
+// Добавляем функцию Брезенхема в начало (перед CheckCollisions)
+void BresenhamLine(POINT start, POINT end, std::vector<POINT>& points) {
+    int x1 = start.x, y1 = start.y;
+    int x2 = end.x, y2 = end.y;
+
+    const bool steep = (abs(y2 - y1) > abs(x2 - x1));
+    if (steep) {
+        std::swap(x1, y1);
+        std::swap(x2, y2);
+    }
+
+    if (x1 > x2) {
+        std::swap(x1, x2);
+        std::swap(y1, y2);
+    }
+
+    const int dx = x2 - x1;
+    const int dy = abs(y2 - y1);
+
+    int error = dx / 2;
+    const int ystep = (y1 < y2) ? 1 : -1;
+    int y = y1;
+
+    for (int x = x1; x <= x2; x++) {
+        points.push_back(steep ? POINT{ y, x } : POINT{ x, y });
+
+        error -= dy;
+        if (error < 0) {
+            y += ystep;
+            error += dx;
+        }
+    }
+}
+
 // Упрощённая проверка коллизий
 void CheckCollisions(HWND hwnd) {
     // Сохраняем начальную позицию мяча
@@ -560,49 +594,61 @@ void CheckCollisions(HWND hwnd) {
     float Angle = atan2(NormalizeVector.y, NormalizeVector.x);// находим угол между вектором движения и осью Х
     POINT Sphere;
     float Predel;
-    for (Predel = -PI / 2; Predel != PI / 2; Predel += PI / 4)//пи/2 дает 3 точки проверки, пи/4 дает 5 точек 
-    {
-        Sphere.x = currentPos.x + ((ballsize / 2) * cos(Predel + Angle));
-        Sphere.x = currentPos.y + ((ballsize / 2) * sin(Predel + Angle));
-    }
-    //надо этот цикл с пределом
     
     for (int i = 1; i <= steps; ++i) 
     {
-        // Промежуточная позиция
-        POINT currentPos = {
-            startPos.x + (dx * i) / steps,
-            startPos.y + (dy * i) / steps
-        };
-        trace.push_back(currentPos);
+        for (Predel = -PI / 2; Predel <= PI / 2; Predel += PI / 4)//пи/2 дает 3 точки проверки, пи/4 дает 5 точек 
+        {
+            // Промежуточная позиция
+            POINT currentPos = 
+            {
+                startPos.x + (dx * i) / steps,
+                startPos.y + (dy * i) / steps
+            };
+            trace.push_back(currentPos);
 
-        // Проверяем коллизию с блоками
-        for (auto& block : blocks) {
-            if (!block.destroyed &&
-                currentPos.x >= block.rect.left - ballsize / 2 &&
-                currentPos.x <= block.rect.right + ballsize / 2 &&
-                currentPos.y >= block.rect.top - ballsize / 2 &&
-                currentPos.y <= block.rect.bottom + ballsize / 2) {
+            // Проверяем коллизию с блоками
+            for (auto& block : blocks) 
+            {
+                Sphere.x = currentPos.x + ((ballsize / 2) * cos(Predel + Angle));
+                Sphere.y = currentPos.y + ((ballsize / 2) * sin(Predel + Angle));
 
-                // Нашли коллизию - откатываем к предыдущей позиции
-                currentPos = trace[trace.size() - 2];
-                collisionDetected = true;
+                  //надо этот цикл с пределом
+                  if ( !block.destroyed &&
 
-                // Определяем сторону столкновения
-                bool hitVertical = (currentPos.y < block.rect.top || currentPos.y > block.rect.bottom);
-                bool hitHorizontal = (currentPos.x < block.rect.left || currentPos.x > block.rect.right);
+                      Sphere.x >= block.rect.left - ballsize / 2 &&
+                      Sphere.x <= block.rect.right + ballsize / 2 &&
+                      Sphere.y >= block.rect.top - ballsize / 2 &&
+                      Sphere.y <= block.rect.bottom + ballsize / 2  )
 
-                // Отражаем мяч
-                if (hitVertical && !hitHorizontal) dy = -dy;
-                else if (hitHorizontal && !hitVertical) dx = -dx;
-                else {
-                    // Угловое столкновение
-                    dx = -dx;
-                    dy = -dy;
-                }
+                        /*currentPos.x >= block.rect.left - ballsize / 2 &&
+                        currentPos.x <= block.rect.right + ballsize / 2 &&
+                        currentPos.y >= block.rect.top - ballsize / 2 &&
+                        currentPos.y <= block.rect.bottom + ballsize / 2)*/
+                  {
 
-                block.destroyed = true;
-                break;
+                        // Нашли коллизию - откатываем к предыдущей позиции
+                        currentPos = trace[trace.size()-1];
+                        collisionDetected = true;
+
+                        // Определяем сторону столкновения
+                        bool hitVertical = (Sphere.y < block.rect.top || Sphere.y > block.rect.bottom);
+                        bool hitHorizontal = (Sphere.x < block.rect.left || Sphere.x > block.rect.right);
+
+                        // Отражаем мяч
+                        if (hitVertical && !hitHorizontal) dy = -dy;
+                        else if (hitHorizontal && !hitVertical) dx = -dx;
+                        else if (Predel != -PI/2 || Predel != PI/2)
+                        {
+                            // Угловое столкновение
+                            dx = -dx;
+                            dy = -dy;
+                        }
+                    
+
+                        block.destroyed = true;
+                        break;
+                  }
             }
         }
 
@@ -613,9 +659,10 @@ void CheckCollisions(HWND hwnd) {
     POINT ballCenter = trace.back();
     if (ballCenter.y + ballsize / 2 >= paddleRect.top &&
         ballCenter.x >= paddleRect.left - ballsize / 2 &&
-        ballCenter.x <= paddleRect.right + ballsize / 2) {
-        dy = -abs(dy*1.5);
-        dx = 3;//удалить
+        ballCenter.x <= paddleRect.right + ballsize / 2) 
+    {
+      
+        dy = -abs(dy);
         ballCenter.y = paddleRect.top - ballsize / 2;
     }
 
@@ -711,13 +758,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         // Управление ракеткой
         if (isLeftPressed) {
-            OffsetRect(&paddleRect, -5, 0);
+            OffsetRect(&paddleRect, -10, 0);
             if (paddleRect.left < 0)
                 SetRect(&paddleRect, 0, paddleRect.top, 100, paddleRect.bottom);
         }
 
         if (isRightPressed) {
-            OffsetRect(&paddleRect, 5, 0);
+            OffsetRect(&paddleRect, 10, 0);
             if (paddleRect.right > 800)
                 SetRect(&paddleRect, 700, paddleRect.top, 800, paddleRect.bottom);
         }
